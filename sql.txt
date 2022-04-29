@@ -1,0 +1,147 @@
+CREATE TABLE Movies (
+    MovieID int PRIMARY KEY,
+	Release_date DATE,
+    Title varchar(255) NOT NULL
+);
+
+CREATE TABLE Customers (
+	CustomerID int PRIMARY KEY,
+);
+
+CREATE TABLE Ratings (
+	MovieID int FOREIGN KEY REFERENCES Movies(MovieID),
+	CustomerID int FOREIGN KEY REFERENCES Customers(CustomerID),
+	Rating decimal(18,0) NOT NULL,
+	Rating_date DATE,
+	PRIMARY KEY (MovieID, CustomerID)
+);
+
+
+CREATE INDEX Rating_index
+ON Ratings (Rating);
+
+-------
+
+
+BULK INSERT dbo.Movies
+FROM 'C:\Users\Zso\Desktop\sql_local_source_files\movie_titles_new.csv'
+WITH
+(
+        FORMAT='CSV',
+        FIRSTROW=1,
+		FIELDTERMINATOR =';'
+)
+GO
+
+-------
+
+BULK INSERT dbo.Customers
+FROM 'C:\Users\Zso\Desktop\sql_local_source_files\customerid_export.csv'
+WITH
+(
+        FORMAT='CSV',
+        FIRSTROW=1,
+		FIELDTERMINATOR =';'
+)
+GO
+
+------
+
+BULK INSERT dbo.Ratings
+FROM 'C:\Users\Zso\Desktop\sql_local_source_files\combined_data_1_new_1.csv'
+WITH
+(
+        FORMAT='CSV',
+        FIRSTROW=1,
+		FIELDTERMINATOR =','
+)
+GO
+
+
+-------------
+
+DECLARE @selected_user int																												
+SET @selected_user = (SELECT 1488844)
+
+SELECT TOP 25 r.MovieID, m.Title, SUM((r.Rating*z.[Pearson r])) AS Score															
+FROM Ratings r
+		   INNER JOIN
+				   (
+					SELECT TOP 7200 x.CustomerID, x.szamlalo/y.nevezo AS "Pearson r"
+					FROM (
+							SELECT   r.CustomerID, SUM((r.Rating - b.AvgU)	* c.CovS) AS szamlalo							
+							FROM Ratings as r
+									INNER JOIN
+									(SELECT CustomerID, AVG(Rating) AS AvgU
+									FROM Ratings
+									WHERE CustomerID <>  @selected_user
+									GROUP BY CustomerID) as b
+									ON r.CustomerID = b.CustomerID
+									INNER JOIN
+									(SELECT CustomerID, MovieID, Rating, 
+									Rating - (SELECT AVG(Rating) FROM Ratings WHERE CustomerID = @selected_user) AS CovS    
+									FROM Ratings
+									WHERE CustomerID = @selected_user) as c
+									ON r.MovieID = c.MovieID
+							GROUP BY r.CustomerID
+						) AS x
+
+						INNER JOIN
+
+						(
+							SELECT a.CustomerID, SQRT(a.SSa * b.SSb) AS nevezo
+							FROM (
+									SELECT r.CustomerID, SUM(d.StDevSqS) AS SSa						
+									FROM Ratings  r
+										INNER JOIN
+										(SELECT CustomerID, MovieID, Rating, 
+										SQUARE(Rating - (SELECT AVG(Rating) FROM Ratings WHERE CustomerID = @selected_user)) AS StDevSqS
+										FROM Ratings
+										WHERE CustomerID = @selected_user) as d
+										ON r.MovieID = d.MovieID
+									WHERE r.CustomerID <> @selected_user
+									GROUP BY r.CustomerID
+								) as a
+								INNER JOIN
+								(
+									SELECT CustomerID, SUM(StDevUSq) AS SSb
+									FROM(
+											SELECT  r.MovieID, r.CustomerID, r.Rating, b.AvgU, SQUARE(Rating-b.AvgU) AS StDevUSq						
+											FROM Ratings as r
+											INNER JOIN
+											(SELECT CustomerID, AVG(Rating) AS AvgU
+											FROM Ratings
+											WHERE CustomerID <> @selected_user
+											GROUP BY CustomerID) as b
+											ON r.CustomerID = b.CustomerID
+											INNER JOIN
+											(SELECT MovieID FROM Ratings WHERE CustomerID = @selected_user) as c
+											ON r.MovieID = c.MovieID
+										) as e
+									GROUP BY CustomerID
+								) as b
+								ON a.CustomerID = b.CustomerID
+								WHERE b.SSb <> 0 and a.SSa <> 0
+						) AS y
+						ON x.CustomerID = y.CustomerID
+					WHERE x.CustomerID IN (SELECT CustomerID
+											FROM Ratings
+											WHERE MovieID IN (
+													SELECT MovieID
+													FROM Ratings
+													WHERE CustomerID = @selected_user
+													)
+												GROUP BY CustomerID
+												HAVING count(*) > 19																
+											)
+					ORDER BY [Pearson r] DESC
+				) as z
+				ON r.CustomerID=z.CustomerID
+			INNER JOIN
+				Movies m ON m.MovieID = r.MovieID
+WHERE r.MovieID NOT IN (SELECT MovieID FROM Ratings WHERE CustomerID = @selected_user)
+GROUP BY r.MovieID, m.Title
+ORDER BY Score DESC
+
+
+
