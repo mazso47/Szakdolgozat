@@ -1,0 +1,43 @@
+# To store\load the data
+import pandas as pd
+from collections import deque
+
+df_raw = pd.read_csv('data/combined_data_4.txt',
+                     header=None,
+                     names=['User', 'Rating', 'Date'],
+                     usecols=[0, 1, 2])
+# Find rows in the format of "1: NaN NaN" that label the start of a new movie
+tmp_movies = df_raw[df_raw['Rating'].isna()]['User'].reset_index()  # make the original index a new column
+movie_indices = [[index, int(movie[:-1])] for index, movie in tmp_movies.values]
+
+# Shift the movie_indices by one to get start and end row indices of all movies
+shifted_movie_indices = deque(movie_indices)
+shifted_movie_indices.rotate(-1)
+
+# Gather all dataframes
+user_data = []
+
+# Iterate over all movies
+for [df_id_1, movie_id], [df_id_2, next_movie_id] in zip(movie_indices, shifted_movie_indices):
+
+    # Check if it is the last movie in the file
+    if df_id_1 < df_id_2:
+        tmp_df = df_raw.loc[df_id_1 + 1:df_id_2 - 1].copy()
+    else:
+        tmp_df = df_raw.loc[df_id_1 + 1:].copy()
+
+    # Create movie_id column
+    tmp_df['Movie'] = movie_id
+
+    # Append dataframe to list
+    user_data.append(tmp_df)
+
+# Combine all dataframes
+df = pd.concat(user_data)
+print('Shape User-Ratings:\t{}'.format(df.shape))
+print(df.sample(10))
+df.to_csv('combined_data_4_new.csv', columns=['Movie', 'User', 'Rating', 'Date'], index=False)
+
+quit()
+
+##Forrás: https://www.kaggle.com/fanglidayan/10-netflix-movie-recommender-part-1
